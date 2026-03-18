@@ -21,9 +21,13 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('bats_token');
-      localStorage.removeItem('bats_user');
-      window.location.href = '/login';
+      // Don't redirect if the 401 came from login/register — let the form show the error
+      const url = error.config?.url || '';
+      if (!url.includes('/auth/login') && !url.includes('/auth/register')) {
+        localStorage.removeItem('bats_token');
+        localStorage.removeItem('bats_user');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
