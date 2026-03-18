@@ -1,0 +1,19 @@
+{
+  "name": "bats",
+  "version": "1.0.0",
+  "description": "BATS — Automated Student Hostel Accommodation & Bed Space Allocation System",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "npm run dev --prefix server",
+    "client": "npm run dev --prefix client",
+    "db:init": "npm run db:init --prefix server",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["hostel", "accommodation", "allocation", "fupre"],
+  "author": "Etoroma Precious Oghenefejiro",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
