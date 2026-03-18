@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "db:init": "node db/init.js"
+    "db:init": "node db/init.js",
+    "render-build": "npm install && node db/init.js"
   },
   "keywords": [],
   "author": "Etoroma Precious Oghenefejiro",
