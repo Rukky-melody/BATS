@@ -1,5 +1,7 @@
 const express = require('express');
-const { getDb } = require('../db/connection');
+const Student = require('../models/Student');
+const Application = require('../models/Application');
+const Allocation = require('../models/Allocation');
 const { authenticate, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -9,14 +11,11 @@ router.use(authenticate, authorize('student'));
 
 /**
  * GET /api/students/profile
- * Get current student's profile
  */
-router.get('/profile', (req, res) => {
+router.get('/profile', async (req, res) => {
     try {
-        const db = getDb();
-        const student = db.prepare(
-            'SELECT id, matric_no, first_name, last_name, email, gender, level, department, faculty, phone, state_of_origin, disability_status, created_at FROM students WHERE id = ?'
-        ).get(req.user.id);
+        const student = await Student.findById(req.user.id)
+            .select('-password');
 
         if (!student) {
             return res.status(404).json({ error: 'Student not found.' });
@@ -31,25 +30,20 @@ router.get('/profile', (req, res) => {
 
 /**
  * PUT /api/students/profile
- * Update current student's profile
  */
-router.put('/profile', (req, res) => {
+router.put('/profile', async (req, res) => {
     try {
         const { phone, state_of_origin, disability_status } = req.body;
-        const db = getDb();
+        const updates = {};
+        if (phone !== undefined) updates.phone = phone;
+        if (state_of_origin !== undefined) updates.state_of_origin = state_of_origin;
+        if (disability_status !== undefined) updates.disability_status = disability_status;
 
-        db.prepare(`
-            UPDATE students 
-            SET phone = COALESCE(?, phone),
-                state_of_origin = COALESCE(?, state_of_origin),
-                disability_status = COALESCE(?, disability_status),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        `).run(phone, state_of_origin, disability_status, req.user.id);
-
-        const updated = db.prepare(
-            'SELECT id, matric_no, first_name, last_name, email, gender, level, department, faculty, phone, state_of_origin, disability_status FROM students WHERE id = ?'
-        ).get(req.user.id);
+        const updated = await Student.findByIdAndUpdate(
+            req.user.id,
+            { $set: updates },
+            { new: true }
+        ).select('-password');
 
         res.json({ message: 'Profile updated successfully.', student: updated });
     } catch (err) {
@@ -62,7 +56,7 @@ router.put('/profile', (req, res) => {
  * POST /api/students/apply
  * Submit hostel accommodation application
  */
-router.post('/apply', (req, res) => {
+router.post('/apply', async (req, res) => {
     try {
         const { session, hostel_preference_id } = req.body;
 
@@ -70,34 +64,36 @@ router.post('/apply', (req, res) => {
             return res.status(400).json({ error: 'Academic session is required.' });
         }
 
-        const db = getDb();
-
-        // Check for existing application in same session
-        const existing = db.prepare(
-            'SELECT id FROM applications WHERE student_id = ? AND session = ? AND application_status NOT IN (?, ?)'
-        ).get(req.user.id, session, 'rejected', 'cancelled');
+        // Check for existing active application in same session
+        const existing = await Application.findOne({
+            student: req.user.id,
+            session,
+            application_status: { $nin: ['rejected', 'cancelled'] }
+        });
 
         if (existing) {
             return res.status(409).json({ error: 'You already have an active application for this session.' });
         }
 
         // Calculate priority score
-        const student = db.prepare('SELECT level, disability_status FROM students WHERE id = ?').get(req.user.id);
+        const student = await Student.findById(req.user.id).select('level disability_status');
         let priorityScore = 0;
         if (student.level === 500) priorityScore += 30;
         else if (student.level === 400) priorityScore += 20;
         else if (student.level === 300) priorityScore += 10;
         if (student.disability_status) priorityScore += 50;
 
-        const result = db.prepare(`
-            INSERT INTO applications (student_id, session, hostel_preference_id, priority_score)
-            VALUES (?, ?, ?, ?)
-        `).run(req.user.id, session, hostel_preference_id || null, priorityScore);
+        const application = await Application.create({
+            student: req.user.id,
+            session,
+            hostel_preference: hostel_preference_id || null,
+            priority_score: priorityScore
+        });
 
         res.status(201).json({
             message: 'Application submitted successfully.',
             application: {
-                id: result.lastInsertRowid,
+                id: application._id,
                 session,
                 payment_status: 'unpaid',
                 application_status: 'pending',
@@ -112,39 +108,51 @@ router.post('/apply', (req, res) => {
 
 /**
  * GET /api/students/application-status
- * Check student's application and allocation status
  */
-router.get('/application-status', (req, res) => {
+router.get('/application-status', async (req, res) => {
     try {
-        const db = getDb();
-        const applications = db.prepare(`
-            SELECT 
-                a.id, a.session, a.payment_status, a.application_status, a.priority_score, a.applied_at,
-                h.name as hostel_preference
-            FROM applications a
-            LEFT JOIN hostels h ON a.hostel_preference_id = h.id
-            WHERE a.student_id = ?
-            ORDER BY a.applied_at DESC
-        `).all(req.user.id);
+        const applications = await Application.find({ student: req.user.id })
+            .populate('hostel_preference', 'name')
+            .sort({ createdAt: -1 })
+            .lean();
 
-        // Get allocation details if any
-        const allocations = db.prepare(`
-            SELECT 
-                al.id, al.session, al.allocated_at, al.status,
-                bs.bed_number,
-                r.room_number, r.floor,
-                b.block_name,
-                h.name as hostel_name
-            FROM allocations al
-            JOIN bed_spaces bs ON al.bed_space_id = bs.id
-            JOIN rooms r ON bs.room_id = r.id
-            JOIN blocks b ON r.block_id = b.id
-            JOIN hostels h ON b.hostel_id = h.id
-            WHERE al.student_id = ?
-            ORDER BY al.allocated_at DESC
-        `).all(req.user.id);
+        // Rename populated field for consistency
+        const formattedApplications = applications.map(a => ({
+            ...a,
+            hostel_preference: a.hostel_preference ? a.hostel_preference.name : null
+        }));
 
-        res.json({ applications, allocations });
+        const allocations = await Allocation.find({ student: req.user.id })
+            .populate({
+                path: 'bed_space',
+                select: 'bed_number room',
+                populate: {
+                    path: 'room',
+                    select: 'room_number floor block',
+                    populate: {
+                        path: 'block',
+                        select: 'block_name hostel',
+                        populate: { path: 'hostel', select: 'name' }
+                    }
+                }
+            })
+            .sort({ createdAt: -1 })
+            .lean();
+
+        // Flatten allocation info
+        const formattedAllocations = allocations.map(al => ({
+            id: al._id,
+            session: al.session,
+            allocated_at: al.createdAt,
+            status: al.status,
+            bed_number: al.bed_space?.bed_number,
+            room_number: al.bed_space?.room?.room_number,
+            floor: al.bed_space?.room?.floor,
+            block_name: al.bed_space?.room?.block?.block_name,
+            hostel_name: al.bed_space?.room?.block?.hostel?.name
+        }));
+
+        res.json({ applications: formattedApplications, allocations: formattedAllocations });
     } catch (err) {
         console.error('Status check error:', err);
         res.status(500).json({ error: 'Internal server error.' });
@@ -153,16 +161,15 @@ router.get('/application-status', (req, res) => {
 
 /**
  * POST /api/students/simulate-payment
- * Simulate payment for an application (placeholder for Paystack)
  */
-router.post('/simulate-payment', (req, res) => {
+router.post('/simulate-payment', async (req, res) => {
     try {
         const { application_id } = req.body;
-        const db = getDb();
 
-        const application = db.prepare(
-            'SELECT * FROM applications WHERE id = ? AND student_id = ?'
-        ).get(application_id, req.user.id);
+        const application = await Application.findOne({
+            _id: application_id,
+            student: req.user.id
+        });
 
         if (!application) {
             return res.status(404).json({ error: 'Application not found.' });
@@ -172,17 +179,15 @@ router.post('/simulate-payment', (req, res) => {
             return res.status(400).json({ error: 'Payment already processed.' });
         }
 
-        // Simulate payment — generate a fake reference
         const paymentRef = `SIM-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
-        db.prepare(`
-            UPDATE applications 
-            SET payment_status = 'paid', 
-                payment_reference = ?,
-                application_status = 'approved',
-                updated_at = CURRENT_TIMESTAMP 
-            WHERE id = ?
-        `).run(paymentRef, application_id);
+        await Application.findByIdAndUpdate(application_id, {
+            $set: {
+                payment_status: 'paid',
+                payment_reference: paymentRef,
+                application_status: 'approved'
+            }
+        });
 
         res.json({
             message: 'Payment simulated successfully. Application approved.',

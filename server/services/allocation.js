@@ -1,99 +1,141 @@
-const { getDb } = require('../db/connection');
+const Application = require('../models/Application');
+const Allocation = require('../models/Allocation');
+const BedSpace = require('../models/BedSpace');
+const Block = require('../models/Block');
+const Student = require('../models/Student');
 
 /**
  * Allocation Algorithm — Random Balloting with Priority Weighting
- * 
- * Allocates bed spaces to approved applications using a fair system:
+ *
  * 1. Gathers all approved (paid) applications for the given session
  * 2. Sorts by priority score (disability, final-year students ranked higher)
  * 3. Randomizes within same priority tier for fairness
  * 4. Assigns available bed spaces matching student gender
- * 
+ *
  * @param {string} session - Academic session (e.g., '2025/2026')
  * @returns {object} - Allocation results summary
  */
-function runAllocation(session) {
-    const db = getDb();
-
-    // Get approved applications with student info
-    const applications = db.prepare(`
-        SELECT 
-            a.id as application_id,
-            a.student_id,
-            a.priority_score,
-            a.hostel_preference_id,
-            s.gender
-        FROM applications a
-        JOIN students s ON a.student_id = s.id
-        WHERE a.session = ? 
-            AND a.application_status = 'approved'
-            AND a.payment_status IN ('paid', 'verified')
-        ORDER BY a.priority_score DESC
-    `).all(session);
+async function runAllocation(session) {
+    // Get approved applications with student gender info
+    const applications = await Application.find({
+        session,
+        application_status: 'approved',
+        payment_status: { $in: ['paid', 'verified'] }
+    })
+    .populate('student', 'gender')
+    .populate('hostel_preference')
+    .sort({ priority_score: -1 })
+    .lean();
 
     if (applications.length === 0) {
         return { success: false, message: 'No approved applications found for this session.', allocated: 0 };
     }
 
-    // Shuffle applications within the same priority tier for fairness
+    // Shuffle within same priority tier for fairness
     const shuffled = shuffleWithinTiers(applications);
 
     let allocated = 0;
     let failed = 0;
 
-    const allocateStmt = db.prepare(`
-        INSERT INTO allocations (application_id, student_id, bed_space_id, session)
-        VALUES (?, ?, ?, ?)
-    `);
-    const updateAppStmt = db.prepare(`
-        UPDATE applications SET application_status = 'allocated', updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `);
-    const updateBedStmt = db.prepare(`
-        UPDATE bed_spaces SET status = 'occupied' WHERE id = ?
-    `);
+    for (const app of shuffled) {
+        // Skip if already allocated
+        const existing = await Allocation.findOne({ application: app._id });
+        if (existing) continue;
 
-    const allocationTransaction = db.transaction(() => {
-        for (const app of shuffled) {
-            // Check if already allocated
-            const existing = db.prepare(
-                'SELECT id FROM allocations WHERE application_id = ?'
-            ).get(app.application_id);
-            if (existing) continue;
+        const gender = app.student?.gender;
+        if (!gender) { failed++; continue; }
 
-            // Find available bed space matching gender
-            let bedQuery = `
-                SELECT bs.id as bed_space_id
-                FROM bed_spaces bs
-                JOIN rooms r ON bs.room_id = r.id
-                JOIN blocks b ON r.block_id = b.id
-                JOIN hostels h ON b.hostel_id = h.id
-                WHERE bs.status = 'available'
-                    AND h.gender = ?
-            `;
-            const params = [app.gender];
+        // Find available bed space matching gender.
+        // Prefer hostel preference if specified; otherwise random.
+        const bedQuery = BedSpace.aggregate([
+            { $match: { status: 'available' } },
+            {
+                $lookup: {
+                    from: 'rooms',
+                    localField: 'room',
+                    foreignField: '_id',
+                    as: 'roomData'
+                }
+            },
+            { $unwind: '$roomData' },
+            {
+                $lookup: {
+                    from: 'blocks',
+                    localField: 'roomData.block',
+                    foreignField: '_id',
+                    as: 'blockData'
+                }
+            },
+            { $unwind: '$blockData' },
+            {
+                $lookup: {
+                    from: 'hostels',
+                    localField: 'blockData.hostel',
+                    foreignField: '_id',
+                    as: 'hostelData'
+                }
+            },
+            { $unwind: '$hostelData' },
+            { $match: { 'hostelData.gender': gender } },
+            { $sample: { size: 1 } }  // random pick
+        ]);
 
-            // Prefer hostel preference if specified
-            if (app.hostel_preference_id) {
-                bedQuery += ' ORDER BY CASE WHEN h.id = ? THEN 0 ELSE 1 END, RANDOM() LIMIT 1';
-                params.push(app.hostel_preference_id);
-            } else {
-                bedQuery += ' ORDER BY RANDOM() LIMIT 1';
+        const [bed] = await bedQuery;
+
+        if (bed) {
+            // Prefer hostel preference if set — try preferred hostel's bed first
+            let chosenBed = bed;
+
+            if (app.hostel_preference) {
+                const prefBedPipeline = BedSpace.aggregate([
+                    { $match: { status: 'available' } },
+                    {
+                        $lookup: {
+                            from: 'rooms',
+                            localField: 'room',
+                            foreignField: '_id',
+                            as: 'roomData'
+                        }
+                    },
+                    { $unwind: '$roomData' },
+                    {
+                        $lookup: {
+                            from: 'blocks',
+                            localField: 'roomData.block',
+                            foreignField: '_id',
+                            as: 'blockData'
+                        }
+                    },
+                    { $unwind: '$blockData' },
+                    {
+                        $match: { 'blockData.hostel': app.hostel_preference._id }
+                    },
+                    { $sample: { size: 1 } }
+                ]);
+                const [prefBed] = await prefBedPipeline;
+                if (prefBed) chosenBed = prefBed;
             }
 
-            const bed = db.prepare(bedQuery).get(...params);
+            await Allocation.create({
+                application: app._id,
+                student: app.student._id,
+                bed_space: chosenBed._id,
+                session
+            });
 
-            if (bed) {
-                allocateStmt.run(app.application_id, app.student_id, bed.bed_space_id, session);
-                updateAppStmt.run(app.application_id);
-                updateBedStmt.run(bed.bed_space_id);
-                allocated++;
-            } else {
-                failed++;
-            }
+            await Application.findByIdAndUpdate(app._id, {
+                $set: { application_status: 'allocated' }
+            });
+
+            await BedSpace.findByIdAndUpdate(chosenBed._id, {
+                $set: { status: 'occupied' }
+            });
+
+            allocated++;
+        } else {
+            failed++;
         }
-    });
-
-    allocationTransaction();
+    }
 
     return {
         success: true,
@@ -105,11 +147,10 @@ function runAllocation(session) {
 }
 
 /**
- * Shuffle applications within the same priority tier
- * Keeps higher priority scores first, but randomizes order within same score
+ * Shuffle applications within the same priority tier.
+ * Keeps higher priority scores first, but randomises within same score.
  */
 function shuffleWithinTiers(applications) {
-    // Group by priority score
     const tiers = {};
     for (const app of applications) {
         const score = app.priority_score;
@@ -117,7 +158,6 @@ function shuffleWithinTiers(applications) {
         tiers[score].push(app);
     }
 
-    // Fisher-Yates shuffle within each tier, then concatenate in descending priority
     const result = [];
     const scores = Object.keys(tiers).map(Number).sort((a, b) => b - a);
 

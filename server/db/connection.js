@@ -1,32 +1,26 @@
-const Database = require('better-sqlite3');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const mongoose = require('mongoose');
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-const DB_PATH = process.env.DB_PATH || './db/bats.db';
-const dbPath = path.resolve(__dirname, '..', DB_PATH);
-
-let db;
-
-function getDb() {
-    if (!db) {
-        db = new Database(dbPath);
-        db.pragma('journal_mode = WAL');
-        db.pragma('foreign_keys = ON');
+async function connectDB() {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) {
+        console.error('❌  MONGODB_URI is not defined in .env');
+        process.exit(1);
     }
-    return db;
-}
-
-function closeDb() {
-    if (db) {
-        db.close();
-        db = null;
+    try {
+        await mongoose.connect(uri);
+        console.log('✅  MongoDB connected successfully');
+    } catch (err) {
+        console.error('❌  MongoDB connection error:', err.message);
+        process.exit(1);
     }
 }
 
 // Graceful shutdown
-process.on('SIGINT', () => {
-    closeDb();
+process.on('SIGINT', async () => {
+    await mongoose.disconnect();
+    console.log('MongoDB disconnected on app termination');
     process.exit(0);
 });
 
-module.exports = { getDb, closeDb };
+module.exports = { connectDB };

@@ -1,8 +1,8 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 require('dotenv').config();
 
+const { connectDB } = require('./db/connection');
 const authRoutes = require('./routes/auth');
 const studentRoutes = require('./routes/students');
 const adminRoutes = require('./routes/admin');
@@ -49,9 +49,11 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Internal server error.' });
 });
 
-// ─── Start server ───────────────────────────────────────
-app.listen(PORT, () => {
-    console.log(`
+// ─── Connect to MongoDB then start server ────────────────
+async function startServer() {
+    await connectDB();
+    app.listen(PORT, () => {
+        console.log(`
 ╔══════════════════════════════════════════════╗
 ║           🏠 BATS API Server                ║
 ║   Hostel Accommodation & Allocation System   ║
@@ -59,8 +61,12 @@ app.listen(PORT, () => {
 ║   Status:  Running                           ║
 ║   Port:    ${PORT}                              ║
 ║   URL:     http://localhost:${PORT}              ║
+║   DB:      MongoDB Atlas                     ║
 ╚══════════════════════════════════════════════╝
-    `);
-});
+        `);
+    });
+}
+
+startServer();
 
 module.exports = app;
