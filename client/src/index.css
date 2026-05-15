@@ -884,3 +884,29 @@ tbody tr:last-child td {
     font-size: 1.5rem;
   }
 }
+
+/* ─── Admin Auth Page ───────────────────────────────────── */
+.auth-page-admin {
+  background: 
+    radial-gradient(ellipse at 50% 0%, rgba(245, 158, 11, 0.08) 0%, transparent 70%),
+    var(--bg);
+}
+
+.auth-card-admin {
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-top: 4px solid var(--warning);
+}
+
+.auth-card-admin .auth-icon {
+  color: var(--warning);
+}
+
+.auth-card-admin .btn-primary {
+  background: var(--warning);
+  color: #fff;
+}
+
+.auth-card-admin .btn-primary:hover:not(:disabled) {
+  background: #d97706; /* warning dark */
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}

@@ -3,6 +3,7 @@ import { useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
+import AdminLoginPage from './pages/AdminLoginPage';
 import RegisterPage from './pages/RegisterPage';
 import StudentDashboard from './pages/StudentDashboard';
 import ApplyPage from './pages/ApplyPage';
@@ -35,6 +36,7 @@ function App() {
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={user ? getHomePage() : <LoginPage />} />
+          <Route path="/admin-login" element={user ? getHomePage() : <AdminLoginPage />} />
           <Route path="/register" element={user ? getHomePage() : <RegisterPage />} />
 
           {/* Student routes */}

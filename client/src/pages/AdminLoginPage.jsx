@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogIn, Building2 } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
-export default function LoginPage() {
+export default function AdminLoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -17,36 +17,41 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(identifier, password, 'student');
-      navigate('/dashboard');
+      const user = await login(identifier, password, 'admin');
+      if (user.role === 'admin' || user.role === 'super_admin') {
+        navigate('/admin');
+      } else {
+        // Fallback in case a student somehow logs in here
+        navigate('/dashboard');
+      }
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.');
+      setError(err.response?.data?.error || 'Admin authentication failed.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
+    <div className="auth-page auth-page-admin">
+      <div className="auth-card auth-card-admin">
         <div className="auth-header">
-          <Building2 size={40} className="auth-icon" />
-          <h1>BATS Student Portal</h1>
-          <p>Bed Space Allocation & Tracking System</p>
-          <span className="auth-subtitle">Federal University of Petroleum Resources, Effurun</span>
+          <ShieldCheck size={48} className="auth-icon" />
+          <h1>Admin Portal</h1>
+          <p>Secure System Access</p>
+          <span className="auth-subtitle">Authorized Personnel Only</span>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
           {error && <div className="alert alert-error">{error}</div>}
 
           <div className="form-group">
-            <label htmlFor="identifier">Matric Number or Email</label>
+            <label htmlFor="identifier">Username or Email</label>
             <input
               id="identifier"
               type="text"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="e.g. COS/8670/2021"
+              placeholder="e.g. admin"
               required
             />
           </div>
@@ -58,20 +63,16 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
+              placeholder="Enter admin password"
               required
             />
           </div>
 
           <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-            <LogIn size={18} />
-            {loading ? 'Signing in...' : 'Sign In'}
+            <ShieldCheck size={18} />
+            {loading ? 'Authenticating...' : 'Secure Login'}
           </button>
         </form>
-
-        <p className="auth-footer">
-          Don't have an account? <Link to="/register">Register here</Link>
-        </p>
       </div>
     </div>
   );
