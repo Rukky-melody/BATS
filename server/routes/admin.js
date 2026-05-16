@@ -6,6 +6,7 @@ const Room = require('../models/Room');
 const BedSpace = require('../models/BedSpace');
 const Application = require('../models/Application');
 const Allocation = require('../models/Allocation');
+const Admin = require('../models/Admin');
 const { authenticate, authorize } = require('../middleware/auth');
 const { runAllocation } = require('../services/allocation');
 
@@ -19,19 +20,39 @@ router.use(authenticate, authorize('admin', 'super_admin'));
  */
 router.get('/stats', async (req, res) => {
     try {
+        const filterHostel = req.user.role === 'admin' && req.user.assigned_gender !== 'all' 
+            ? { gender: req.user.assigned_gender } : {};
+
+        let appFilter = {};
+        let studentFilter = {};
+        
+        if (req.user.role === 'admin' && req.user.assigned_gender !== 'all') {
+            studentFilter = { gender: req.user.assigned_gender };
+            const allowedStudents = await Student.find(studentFilter).select('_id').lean();
+            appFilter.student = { $in: allowedStudents.map(s => s._id) };
+        }
+
+        const allowedHostels = await Hostel.find(filterHostel).select('_id').lean();
+        const allowedBlocks = await Block.find({ hostel: { $in: allowedHostels.map(h => h._id) } }).select('_id').lean();
+        const allowedRooms = await Room.find({ block: { $in: allowedBlocks.map(b => b._id) } }).select('_id').lean();
+        const allowedRoomIds = allowedRooms.map(r => r._id);
+
+        const bedFilter = allowedRoomIds.length > 0 ? { room: { $in: allowedRoomIds } } : { room: null }; 
+        if (Object.keys(filterHostel).length === 0) delete bedFilter.room; // if no filter, don't restrict beds
+
         const [
             totalStudents, totalHostels, totalBeds,
             availableBeds, occupiedBeds,
             pendingApps, approvedApps, allocatedApps
         ] = await Promise.all([
-            Student.countDocuments(),
-            Hostel.countDocuments(),
-            BedSpace.countDocuments(),
-            BedSpace.countDocuments({ status: 'available' }),
-            BedSpace.countDocuments({ status: 'occupied' }),
-            Application.countDocuments({ application_status: 'pending' }),
-            Application.countDocuments({ application_status: 'approved' }),
-            Application.countDocuments({ application_status: 'allocated' })
+            Student.countDocuments(studentFilter),
+            Hostel.countDocuments(filterHostel),
+            Object.keys(filterHostel).length === 0 ? BedSpace.countDocuments() : BedSpace.countDocuments(bedFilter),
+            Object.keys(filterHostel).length === 0 ? BedSpace.countDocuments({ status: 'available' }) : BedSpace.countDocuments({ ...bedFilter, status: 'available' }),
+            Object.keys(filterHostel).length === 0 ? BedSpace.countDocuments({ status: 'occupied' }) : BedSpace.countDocuments({ ...bedFilter, status: 'occupied' }),
+            Application.countDocuments({ ...appFilter, application_status: 'pending' }),
+            Application.countDocuments({ ...appFilter, application_status: 'approved' }),
+            Application.countDocuments({ ...appFilter, application_status: 'allocated' })
         ]);
 
         res.json({
@@ -52,7 +73,9 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/hostels', async (req, res) => {
     try {
-        const hostels = await Hostel.find().lean();
+        const filter = req.user.role === 'admin' && req.user.assigned_gender !== 'all' 
+            ? { gender: req.user.assigned_gender } : {};
+        const hostels = await Hostel.find(filter).lean();
 
         // Enrich with counts via aggregation
         const enriched = await Promise.all(hostels.map(async (hostel) => {
@@ -166,6 +189,11 @@ router.get('/applications', async (req, res) => {
         if (session) filter.session = session;
         if (status) filter.application_status = status;
 
+        if (req.user.role === 'admin' && req.user.assigned_gender !== 'all') {
+            const allowedStudents = await Student.find({ gender: req.user.assigned_gender }).select('_id').lean();
+            filter.student = { $in: allowedStudents.map(s => s._id) };
+        }
+
         const applications = await Application.find(filter)
             .populate('student', 'matric_no first_name last_name gender level department')
             .populate('hostel_preference', 'name')
@@ -222,6 +250,11 @@ router.get('/allocations', async (req, res) => {
         const filter = {};
         if (session) filter.session = session;
 
+        if (req.user.role === 'admin' && req.user.assigned_gender !== 'all') {
+            const allowedStudents = await Student.find({ gender: req.user.assigned_gender }).select('_id').lean();
+            filter.student = { $in: allowedStudents.map(s => s._id) };
+        }
+
         const allocations = await Allocation.find(filter)
             .populate('student', 'matric_no first_name last_name gender level')
             .populate({
@@ -260,6 +293,51 @@ router.get('/allocations', async (req, res) => {
         res.json({ allocations: formatted });
     } catch (err) {
         console.error('Allocations list error:', err);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+/**
+ * GET /api/admin/users
+ */
+router.get('/users', authorize('super_admin'), async (req, res) => {
+    try {
+        const users = await Admin.find({}, '-password').lean();
+        res.json({ users });
+    } catch (err) {
+        console.error('Fetch users error:', err);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+/**
+ * POST /api/admin/users
+ */
+router.post('/users', authorize('super_admin'), async (req, res) => {
+    try {
+        const { username, email, full_name, password, assigned_gender } = req.body;
+        if (!username || !email || !full_name || !password || !assigned_gender) {
+            return res.status(400).json({ error: 'All fields are required.' });
+        }
+        
+        const existing = await Admin.findOne({ $or: [{ username }, { email }] });
+        if (existing) {
+            return res.status(409).json({ error: 'Username or email already exists.' });
+        }
+
+        const bcrypt = require('bcryptjs');
+        const hashedPassword = await bcrypt.hash(password, 10);
+        
+        const newUser = await Admin.create({
+            username, email, full_name, password: hashedPassword, role: 'admin', assigned_gender
+        });
+        
+        const userObj = newUser.toObject();
+        delete userObj.password;
+        
+        res.status(201).json({ message: 'Admin user created successfully.', user: userObj });
+    } catch (err) {
+        console.error('Create user error:', err);
         res.status(500).json({ error: 'Internal server error.' });
     }
 });

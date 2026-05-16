@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Home, FileText, Building2, Users, LayoutDashboard } from 'lucide-react';
+import { LogOut, Home, FileText, Building2, Users, LayoutDashboard, ShieldCheck } from 'lucide-react';
 
 export default function Navbar() {
   const { user, logout, isAdmin, isStudent } = useAuth();
@@ -50,6 +50,12 @@ export default function Navbar() {
               <Users size={18} />
               <span>Applications</span>
             </Link>
+            {user.role === 'super_admin' && (
+              <Link to="/admin/users" className="nav-link">
+                <ShieldCheck size={18} />
+                <span>Admins</span>
+              </Link>
+            )}
           </>
         )}
       </div>

@@ -10,6 +10,7 @@ import ApplyPage from './pages/ApplyPage';
 import AdminDashboard from './pages/AdminDashboard';
 import ManageHostels from './pages/ManageHostels';
 import ManageApplications from './pages/ManageApplications';
+import ManageAdmins from './pages/ManageAdmins';
 
 function App() {
   const { user, loading } = useAuth();
@@ -56,6 +57,9 @@ function App() {
           } />
           <Route path="/admin/applications" element={
             <ProtectedRoute requiredRole={['admin', 'super_admin']}><ManageApplications /></ProtectedRoute>
+          } />
+          <Route path="/admin/users" element={
+            <ProtectedRoute requiredRole="super_admin"><ManageAdmins /></ProtectedRoute>
           } />
 
           {/* Catch-all */}

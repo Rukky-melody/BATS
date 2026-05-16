@@ -98,7 +98,7 @@ router.post('/login', async (req, res) => {
         }
 
         const tokenPayload = role === 'admin'
-            ? { id: user._id, role: userRole, username: user.username }
+            ? { id: user._id, role: userRole, username: user.username, assigned_gender: user.assigned_gender || 'all' }
             : { id: user._id, role: 'student', matric_no: user.matric_no };
 
         const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });

@@ -22,7 +22,8 @@ async function seedDatabase() {
             email: 'admin@fupre.edu.ng',
             password: hashedPassword,
             full_name: 'System Administrator',
-            role: 'super_admin'
+            role: 'super_admin',
+            assigned_gender: 'all'
         });
         console.log('✅ Default admin account created (username: admin, password: admin123)');
     } else {
