@@ -66,7 +66,7 @@ export default function ManageAdmins() {
       </header>
 
       <div className="admin-content">
-        <div className="premium-card">
+        <div className="card">
           <h2>Create New Admin</h2>
           
           {error && <div className="alert error"><AlertCircle size={18} /> {error}</div>}

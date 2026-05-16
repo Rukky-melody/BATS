@@ -1,9 +1,11 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Home, FileText, Building2, Users, LayoutDashboard, ShieldCheck } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+import { LogOut, Home, FileText, Building2, Users, LayoutDashboard, ShieldCheck, Sun, Moon } from 'lucide-react';
 
 export default function Navbar() {
   const { user, logout, isAdmin, isStudent } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -65,7 +67,12 @@ export default function Navbar() {
           {isAdmin ? user.full_name || user.username : `${user.first_name} ${user.last_name}`}
         </span>
         <span className="user-role">{user.role}</span>
-        <button onClick={handleLogout} className="btn-logout" title="Logout">
+        
+        <button onClick={toggleTheme} className="btn-icon" title="Toggle Theme">
+          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+
+        <button onClick={handleLogout} className="btn-icon btn-logout" title="Logout">
           <LogOut size={18} />
         </button>
       </div>
