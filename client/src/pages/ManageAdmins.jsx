@@ -73,23 +73,23 @@ export default function ManageAdmins() {
           {success && <div className="alert success"><ShieldCheck size={18} /> {success}</div>}
 
           <form onSubmit={handleSubmit} className="auth-form" style={{ marginTop: '1rem' }}>
-            <div className="form-group">
-              <label>Full Name</label>
-              <div className="input-group">
-                <User className="input-icon" size={18} />
-                <input
-                  type="text"
-                  name="full_name"
-                  value={formData.full_name}
-                  onChange={handleChange}
-                  placeholder="John Doe"
-                  required
-                />
+            <div className="form-grid">
+              <div className="form-group full-width">
+                <label>Full Name</label>
+                <div className="input-group">
+                  <User className="input-icon" size={18} />
+                  <input
+                    type="text"
+                    name="full_name"
+                    value={formData.full_name}
+                    onChange={handleChange}
+                    placeholder="John Doe"
+                    required
+                  />
+                </div>
               </div>
-            </div>
-            
-            <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
-              <div className="form-group" style={{ flex: 1 }}>
+              
+              <div className="form-group">
                 <label>Username</label>
                 <div className="input-group">
                   <User className="input-icon" size={18} />
@@ -104,7 +104,7 @@ export default function ManageAdmins() {
                 </div>
               </div>
 
-              <div className="form-group" style={{ flex: 1 }}>
+              <div className="form-group">
                 <label>Email Address</label>
                 <div className="input-group">
                   <Mail className="input-icon" size={18} />
@@ -118,10 +118,8 @@ export default function ManageAdmins() {
                   />
                 </div>
               </div>
-            </div>
 
-            <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
-              <div className="form-group" style={{ flex: 1 }}>
+              <div className="form-group">
                 <label>Password</label>
                 <input
                   type="password"
@@ -132,7 +130,8 @@ export default function ManageAdmins() {
                   required
                 />
               </div>
-              <div className="form-group" style={{ flex: 1 }}>
+              
+              <div className="form-group">
                 <label>Assigned Hostels</label>
                 <select name="assigned_gender" value={formData.assigned_gender} onChange={handleChange} required>
                   <option value="male">Male Hostels Only</option>
