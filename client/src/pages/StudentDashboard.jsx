@@ -127,7 +127,7 @@ export default function StudentDashboard() {
                         {app.application_status}
                       </span>
                     </td>
-                    <td>{new Date(app.applied_at).toLocaleDateString()}</td>
+                    <td>{new Date(app.createdAt).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>
