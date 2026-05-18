@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Send, Building2, CreditCard } from 'lucide-react';
 
 export default function ApplyPage() {
+  const { user } = useAuth();
   const [hostels, setHostels] = useState([]);
   const [session, setSession] = useState('2025/2026');
   const [hostelPreference, setHostelPreference] = useState('');
@@ -12,6 +14,12 @@ export default function ApplyPage() {
   const [loading, setLoading] = useState(false);
   const [submittedApp, setSubmittedApp] = useState(null);
   const navigate = useNavigate();
+
+  // Filter hostels to only show those matching the student's gender
+  const studentGender = user?.gender;
+  const filteredHostels = studentGender
+    ? hostels.filter((h) => h.gender === studentGender)
+    : hostels;
 
   useEffect(() => {
     fetchHostels();
@@ -88,10 +96,12 @@ export default function ApplyPage() {
           <div className="form-group">
             <label htmlFor="hostel_preference">Hostel Preference (Optional)</label>
             <select id="hostel_preference" value={hostelPreference} onChange={(e) => setHostelPreference(e.target.value)}>
-              <option value="">No preference (any available)</option>
-              {hostels.map((h) => (
+              <option value="">
+                No preference (any {studentGender || ''} hostel)
+              </option>
+              {filteredHostels.map((h) => (
                 <option key={h.id} value={h.id}>
-                  {h.name} ({h.gender}) — {h.available_beds} beds available
+                  {h.name} — {h.available_beds} beds available
                 </option>
               ))}
             </select>
