@@ -2,6 +2,7 @@ const express = require('express');
 const Student = require('../models/Student');
 const Application = require('../models/Application');
 const Allocation = require('../models/Allocation');
+const BedSpace = require('../models/BedSpace');
 const { authenticate, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -195,6 +196,40 @@ router.post('/simulate-payment', async (req, res) => {
         });
     } catch (err) {
         console.error('Payment simulation error:', err);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
+/**
+ * DELETE /api/students/application/:id
+ * Delete/withdraw an application (e.g. after a payment reversal)
+ */
+router.delete('/application/:id', async (req, res) => {
+    try {
+        const application = await Application.findOne({
+            _id: req.params.id,
+            student: req.user.id
+        });
+
+        if (!application) {
+            return res.status(404).json({ error: 'Application not found.' });
+        }
+
+        // If there's an allocation linked to this application, clean it up
+        const allocation = await Allocation.findOne({ application: application._id });
+        if (allocation) {
+            // Free the bed space
+            await BedSpace.findByIdAndUpdate(allocation.bed_space, {
+                $set: { status: 'available' }
+            });
+            await Allocation.findByIdAndDelete(allocation._id);
+        }
+
+        await Application.findByIdAndDelete(application._id);
+
+        res.json({ message: 'Application deleted successfully.' });
+    } catch (err) {
+        console.error('Delete application error:', err);
         res.status(500).json({ error: 'Internal server error.' });
     }
 });

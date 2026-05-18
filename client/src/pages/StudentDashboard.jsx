@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { BedDouble, FileText, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { BedDouble, FileText, CheckCircle2, Clock, AlertCircle, Trash2 } from 'lucide-react';
 
 export default function StudentDashboard() {
   const { user } = useAuth();
   const [applications, setApplications] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(null);
 
   useEffect(() => {
     fetchStatus();
@@ -23,6 +24,21 @@ export default function StudentDashboard() {
       console.error('Failed to fetch status:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteApplication = async (appId) => {
+    if (!window.confirm('Are you sure you want to delete this application? This action cannot be undone.')) {
+      return;
+    }
+    setDeleting(appId);
+    try {
+      await api.delete(`/students/application/${appId}`);
+      await fetchStatus();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to delete application.');
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -109,6 +125,7 @@ export default function StudentDashboard() {
                   <th>Payment</th>
                   <th>Status</th>
                   <th>Date</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -128,6 +145,17 @@ export default function StudentDashboard() {
                       </span>
                     </td>
                     <td>{new Date(app.createdAt).toLocaleDateString()}</td>
+                    <td>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => handleDeleteApplication(app._id)}
+                        disabled={deleting === app._id}
+                        title="Delete application"
+                      >
+                        <Trash2 size={14} />
+                        {deleting === app._id ? 'Deleting...' : 'Delete'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
